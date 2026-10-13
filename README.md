@@ -2,7 +2,7 @@
 
 A desktop app for [Claude Code](https://claude.com/claude-code) CLI sessions. It lists every session on your machine, including ones running in other terminals. You can resume them in split terminal panes and tabs, and save sets of sessions as groups.
 
-<img src="build/icon.png" width="128" alt="Claude Deck icon">
+![Claude Deck: sessions sidebar, tabs and split Claude Code terminals](docs/screenshot.png)
 
 ## Install
 
@@ -30,7 +30,6 @@ A desktop app for [Claude Code](https://claude.com/claude-code) CLI sessions. It
 - **Split panes and tabs.** Split right or down, drag dividers, maximize a pane, and move between panes with Option/Alt + arrows.
 - **Groups.** Save a tab's layout as a group. Opening it later resumes every session in its own folder.
 - **Session names.** Give sessions your own names. Claude's title stays visible as a description.
-- **Drag and drop.** Drop files or images into a pane to type their paths.
 - **Command palette** to jump to any session.
 
 ## Keyboard shortcuts

@@ -99,9 +99,11 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .pane-head .pcwd { color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
 .pane-head button { border: 0; background: transparent; color: var(--faint); cursor: pointer; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 .pane-head button:hover { background: var(--panel-2); color: var(--text); }
-.pane-body { flex: 1; min-height: 0; position: relative; padding: 4px 0 0 6px; }
-.pane-body .xterm { height: 100%; }
-.xterm .xterm-viewport { scrollbar-width: thin; }
+/* padding sits on .xterm (not .pane-body): the fit addon subtracts the terminal element's padding, not its parent's */
+.pane-body { flex: 1; min-height: 0; position: relative; }
+.pane-body .xterm { height: 100%; padding: 4px 0 0 6px; }
+/* xterm draws its own scrollbar; the native one underneath only leaves stray corner squares */
+.xterm .xterm-viewport { scrollbar-width: none; background-color: var(--bg) !important; }
 
 .empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--muted); padding: 20px; }
 .empty h3 { margin: 0; font-weight: 600; color: var(--text); font-size: 15px; }
