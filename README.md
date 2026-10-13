@@ -4,6 +4,25 @@ A desktop app for [Claude Code](https://claude.com/claude-code) CLI sessions. It
 
 <img src="build/icon.png" width="128" alt="Claude Deck icon">
 
+## Install
+
+1. Install [Claude Code](https://claude.com/claude-code) first, and check that `claude` works in your terminal.
+2. Download the latest zip from **[Releases](https://github.com/BatuhanSpyke/claude-deck/releases/latest)**:
+   - Mac (Apple Silicon): `Claude-Deck-mac-arm64.zip`
+   - Windows (x64): `Claude-Deck-windows-x64.zip`
+
+**macOS**
+
+1. Unzip it and drag **Claude Deck.app** into your **Applications** folder.
+2. Open it. macOS will warn that it's from an unidentified developer, because the app isn't signed with an Apple developer certificate. Go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once.
+   - Or run this in Terminal: `xattr -dr com.apple.quarantine "/Applications/Claude Deck.app"`
+
+**Windows**
+
+1. Unzip the folder anywhere, for example `C:\Users\<you>\Apps\Claude Deck`.
+2. Run **Claude Deck.exe**. If SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
+3. Optional: right-click the exe and choose **Pin to Start** or **Pin to taskbar**.
+
 ## Features
 
 - **All sessions in one sidebar.** It reads `~/.claude/projects` and `~/.claude/sessions` and shows titles, projects and live status (busy, idle, needs attention). It also shows sessions running in other terminals.
