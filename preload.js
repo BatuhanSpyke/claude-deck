@@ -1,0 +1,22 @@
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+contextBridge.exposeInMainWorld('deck', {
+  sessions: () => ipcRenderer.invoke('sessions'),
+  ptyCreate: (opts) => ipcRenderer.invoke('pty:create', opts),
+  ptyWrite: (id, d) => ipcRenderer.send('pty:write', id, d),
+  ptyResize: (id, c, r) => ipcRenderer.send('pty:resize', id, c, r),
+  ptyKill: (id) => ipcRenderer.send('pty:kill', id),
+  onPtyData: (fn) => ipcRenderer.on('pty:data', (_e, id, d) => fn(id, d)),
+  onPtyExit: (fn) => ipcRenderer.on('pty:exit', (_e, id, code) => fn(id, code)),
+  onCmd: (fn) => ipcRenderer.on('cmd', (_e, cmd, ...a) => fn(cmd, ...a)),
+  pickFolder: (p) => ipcRenderer.invoke('pickFolder', p),
+  askRunningElsewhere: (s) => ipcRenderer.invoke('askRunningElsewhere', s),
+  confirmClose: (m) => ipcRenderer.invoke('confirmClose', m),
+  focusExternal: (tty) => ipcRenderer.invoke('focusExternal', tty),
+  menu: (items) => ipcRenderer.invoke('menu', items),
+  reveal:(p) => ipcRenderer.send('reveal', p),
+  copy: (t) => ipcRenderer.send('copy', t),
+  filePath: (f) => webUtils.getPathForFile(f),
+  home: require('os').homedir(),
+  platform: process.platform,
+});

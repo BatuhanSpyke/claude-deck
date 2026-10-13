@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Claude Deck</title>
+  <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="side-head drag">
+        <span class="side-title">Sessions</span>
+        <button id="newBtn" class="icon-btn nodrag" title="New Claude session (⌘N)">＋</button>
+      </div>
+      <div class="side-tools">
+        <input id="search" type="search" placeholder="Search sessions" spellcheck="false">
+        <div class="chips">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="running">Running</button>
+          <select id="projectFilter" title="Filter by project"><option value="">All projects</option></select>
+        </div>
+      </div>
+      <div id="list"></div>
+    </aside>
+    <div id="resizer" title="Drag to resize"></div>
+    <main>
+      <div id="tabbar" class="drag">
+        <button id="sideToggle" class="icon-btn nodrag" title="Toggle sidebar (⌘B)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><line x1="6" y1="2.5" x2="6" y2="13.5"/></svg>
+        </button>
+        <div id="tabs" class="nodrag"></div>
+        <button id="addTab" class="icon-btn nodrag" title="New tab (⌘T)">＋</button>
+      </div>
+      <div id="workspace"></div>
+    </main>
+  </div>
+
+  <div id="palette" class="hidden">
+    <div class="palette-box">
+      <input id="paletteInput" placeholder="Jump to a session…  (↵ open · ⌘↵ new tab)" spellcheck="false">
+      <div id="paletteList"></div>
+    </div>
+  </div>
+
+  <div id="modal" class="hidden">
+    <div class="palette-box modal-box">
+      <div id="modalTitle"></div>
+      <input id="modalInput" spellcheck="false">
+      <div class="modal-hint">↵ save · esc cancel</div>
+    </div>
+  </div>
+
+  <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

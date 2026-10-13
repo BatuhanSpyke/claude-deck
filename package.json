@@ -1,0 +1,28 @@
+{
+  "name": "claude-deck",
+  "productName": "Claude Deck",
+  "version": "1.0.0",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "package": "electron-packager . \"Claude Deck\" --platform=darwin --arch=arm64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|build/(?!icon\\.png$))\" --app-bundle-id=local.claude-deck --icon=build/icon.icns",
+    "package:win": "electron-packager . \"Claude Deck\" --platform=win32 --arch=x64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|build/(?!icon\\.png$))\" --icon=build/icon.ico",
+    "package:win-noicon": "electron-packager . \"Claude Deck\" --platform=win32 --arch=x64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|build/(?!icon\\.png$))\""
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@electron/rebuild": "^4.2.1",
+    "electron": "^44.7.0"
+  },
+  "allowScripts": {
+    "electron@44.7.0": true
+  },
+  "description": "A desktop app for Claude Code: see every CLI session, resume them in split terminal panes, tabs and groups."
+}

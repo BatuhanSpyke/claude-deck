@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+# icon build intermediates (regenerate from build/icon.svg)
+build/render
+build/ico/
+build/icon.iconset/
