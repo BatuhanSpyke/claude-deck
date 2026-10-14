@@ -32,6 +32,11 @@
         </button>
         <div id="tabs" class="nodrag"></div>
         <button id="addTab" class="icon-btn nodrag" title="New tab (⌘T)">＋</button>
+        <button id="updateBtn" class="nodrag hidden" title="Restart to install the update. Your tabs reopen and sessions resume."></button>
+        <button id="settingsBtn" class="icon-btn nodrag" title="Settings (⌘,)">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M3.4 12.6l1.3-1.3M11.3 4.7l1.3-1.3"/></svg>
+        </button>
+        <button id="helpBtn" class="icon-btn nodrag" title="Keyboard shortcuts (⌘/)">?</button>
       </div>
       <div id="workspace"></div>
     </main>
@@ -49,6 +54,33 @@
       <div id="modalTitle"></div>
       <input id="modalInput" spellcheck="false">
       <div class="modal-hint">↵ save · esc cancel</div>
+    </div>
+  </div>
+
+  <div id="shortcuts" class="hidden">
+    <div class="palette-box shortcuts-box">
+      <div class="sc-head"><b>Keyboard shortcuts</b><button id="scClose" class="icon-btn" title="Close (esc)">✕</button></div>
+      <div id="scList"></div>
+      <div class="modal-hint">Drag a pane by its title bar to move it: drop on an edge to split there, in the middle to swap, or on a tab to move it to that tab.</div>
+    </div>
+  </div>
+
+  <div id="updateCard" class="hidden">
+    <div class="uc-title">New release available</div>
+    <div class="uc-text">Claude Deck <b id="ucVersion"></b> is out. You have <span id="ucCurrent"></span>. <a href="#" id="ucNotes">What's new</a></div>
+    <label class="uc-auto"><input type="checkbox" id="ucAuto"> Install updates automatically from now on</label>
+    <div class="uc-error hidden" id="ucError"></div>
+    <div class="uc-buttons"><button id="ucLater">Later</button><button id="ucInstall" class="primary">Install</button></div>
+  </div>
+
+  <div id="settings" class="hidden">
+    <div class="palette-box settings-box">
+      <div class="sc-head"><b>Settings</b><button id="setClose" class="icon-btn" title="Close (esc)">✕</button></div>
+      <h4>Updates</h4>
+      <label class="set-row"><span><b>Install updates automatically</b><small>New releases download in the background and install the next time you restart or quit Claude Deck. Your tabs reopen and sessions resume.</small></span>
+        <input type="checkbox" id="setAuto" class="switch"></label>
+      <div class="set-row"><span><b>Version <span id="setVersion"></span></b><small id="setStatus">Off: you'll be asked when a new release comes out.</small></span>
+        <button id="setCheck">Check now</button></div>
     </div>
   </div>
 

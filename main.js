@@ -5,6 +5,7 @@ const os = require('os');
 const { execFile } = require('child_process');
 const pty = require('node-pty');
 const { scan } = require('./sessions');
+const updater = require('./updater');
 const IS_MAC = process.platform === 'darwin';
 const IS_WIN = process.platform === 'win32';
 
@@ -23,6 +24,7 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   win.loadFile('index.html');
+  win.webContents.on('did-finish-load', () => { const st = updater.status(); if (st) win.webContents.send('update', st); });
   // Dropping a file must never navigate the window away from the app
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.on('closed', () => { win = null; });
@@ -148,6 +150,42 @@ ipcMain.handle('menu', (_e, items) => new Promise((resolve) => {
 ipcMain.on('reveal', (_e, p) => shell.showItemInFolder(p));
 ipcMain.on('copy', (_e, text) => clipboard.writeText(text));
 
+// ---------- settings / updates ----------
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+const settings = { autoUpdate: null };   // null = not chosen yet: ask when a release comes out
+function loadSettings() { try { Object.assign(settings, JSON.parse(require('fs').readFileSync(settingsFile(), 'utf8'))); } catch {} }
+function saveSettings() { try { require('fs').writeFileSync(settingsFile(), JSON.stringify(settings, null, 2)); } catch {} }
+
+function setSetting(k, v) {
+  settings[k] = v; saveSettings(); buildMenu();
+  if (win) win.webContents.send('settings', settings);
+  if (k === 'autoUpdate' && v) updater.download();   // turned on while a release is waiting
+}
+ipcMain.handle('settings:get', () => ({ ...settings, version: app.getVersion(), canUpdate: updater.supported(), packaged: app.isPackaged }));
+ipcMain.on('settings:set', (_e, k, v) => setSetting(k, v));
+ipcMain.handle('update:check', () => updater.check({ manual: true, autoInstall: !!settings.autoUpdate }));
+ipcMain.on('update:download', () => updater.download());
+ipcMain.on('openReleases', () => shell.openExternal('https://github.com/BatuhanSpyke/claude-deck/releases/latest'));
+
+async function checkForUpdates() {
+  const r = await updater.check({ manual: true, autoInstall: !!settings.autoUpdate });
+  if (r.state === 'available') return;   // the app shows its own "new release" card
+  const msg = {
+    latest: [`You're up to date`, `Claude Deck ${app.getVersion()} is the latest version.`],
+    ready: [`Claude Deck ${r.version} is ready`, 'Restart to install it. Your tabs reopen and sessions resume where they were.'],
+    busy: ['Already checking for updates…', ''],
+    unsupported: [`Can't update this copy automatically`, app.isPackaged
+      ? 'Move Claude Deck into your Applications folder (or a folder you can write to) and open it from there.'
+      : 'Updates only work in the packaged app, not when running from source.'],
+    error: [`Couldn't check for updates`, r.message || ''],
+  }[r.state];
+  const buttons = r.state === 'ready' ? ['Restart Now', 'Later'] : ['OK'];
+  const { response } = await dialog.showMessageBox(win, { type: r.state === 'error' ? 'warning' : 'info', message: msg[0], detail: msg[1], buttons, defaultId: 0, cancelId: buttons.length - 1 });
+  if (r.state === 'ready' && response === 0) restartToUpdate();
+}
+function restartToUpdate() { if (updater.apply(true)) app.quit(); }
+ipcMain.on('update:restart', () => restartToUpdate());
+
 // ---------- menu ----------
 function send(cmd, ...a) { win && win.webContents.send('cmd', cmd, ...a); }
 // Shortcuts: ⌘ on macOS. On Windows plain Ctrl+letter belongs to the terminal (Ctrl+C, Ctrl+D, Ctrl+W…),
@@ -156,12 +194,12 @@ const K = IS_MAC ? {
   newSession: 'Cmd+N', newTab: 'Cmd+T', saveGroup: 'Cmd+Shift+S', rename: 'Cmd+Shift+R',
   splitH: 'Cmd+D', splitV: 'Cmd+Shift+D', closePane: 'Cmd+W', closeTab: 'Cmd+Shift+W',
   sidebar: 'Cmd+B', find: 'Cmd+P', nextTab: 'Cmd+Shift+]', prevTab: 'Cmd+Shift+[',
-  nextPane: 'Cmd+]', prevPane: 'Cmd+[', zoom: 'Cmd+Shift+Enter', tab: 'Cmd+',
+  nextPane: 'Cmd+]', prevPane: 'Cmd+[', zoom: 'Cmd+Shift+Enter', tab: 'Cmd+', shortcuts: 'Cmd+/',
 } : {
   newSession: 'Ctrl+Shift+N', newTab: 'Ctrl+Shift+T', saveGroup: 'Ctrl+Shift+S', rename: 'Ctrl+Shift+R',
   splitH: 'Ctrl+Shift+D', splitV: 'Ctrl+Shift+E', closePane: 'Ctrl+Shift+W', closeTab: 'Ctrl+Shift+Q',
   sidebar: 'Ctrl+Shift+B', find: 'Ctrl+Shift+P', nextTab: 'Ctrl+Tab', prevTab: 'Ctrl+Shift+Tab',
-  nextPane: 'Ctrl+Shift+]', prevPane: 'Ctrl+Shift+[', zoom: 'Ctrl+Shift+Enter', tab: 'Ctrl+',
+  nextPane: 'Ctrl+Shift+]', prevPane: 'Ctrl+Shift+[', zoom: 'Ctrl+Shift+Enter', tab: 'Ctrl+', shortcuts: 'Ctrl+Shift+/',
 };
 function buildMenu() {
   const tabs = Array.from({ length: 9 }, (_, i) => ({ label: `Tab ${i + 1}`, accelerator: `${K.tab}${i + 1}`, click: () => send('tab', i), visible: false }));
@@ -203,13 +241,27 @@ function buildMenu() {
       { role: 'reload' }, { role: 'toggleDevTools' }, { role: 'togglefullscreen' },
     ] },
     { role: 'windowMenu' },
+    { role: 'help', submenu: [
+      { label: 'Keyboard Shortcuts', accelerator: K.shortcuts, click: () => send('shortcuts') },
+      { type: 'separator' },
+      { label: 'Check for Updates…', click: () => checkForUpdates() },
+      { label: 'Install Updates Automatically', type: 'checkbox', checked: !!settings.autoUpdate, click: (it) => setSetting('autoUpdate', it.checked) },
+      { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => send('settings') },
+      { label: `Version ${app.getVersion()}`, enabled: false },
+    ] },
   ]));
 }
 
 app.setName('Claude Deck');
 // For testing a second copy without touching your real layout/groups
 if (process.env.DECK_USERDATA) app.setPath('userData', process.env.DECK_USERDATA);
-app.whenReady().then(() => { buildMenu(); createWindow(); });
+app.whenReady().then(() => {
+  loadSettings(); buildMenu(); createWindow();
+  updater.start((info) => win && win.webContents.send('update', info), () => !!settings.autoUpdate);
+});
 app.on('activate', () => { if (!win) createWindow(); });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => { for (const { proc } of ptys.values()) { try { proc.kill(); } catch {} } });
+app.on('before-quit', () => {
+  updater.apply(false);   // downloaded (auto, or you said Install) but not restarted yet: install on the way out
+  for (const { proc } of ptys.values()) { try { proc.kill(); } catch {} }
+});

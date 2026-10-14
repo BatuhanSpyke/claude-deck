@@ -149,3 +149,61 @@ main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 body.win .side-head { padding-left: 12px; }
 body.win #app.collapsed #tabbar { padding-left: 8px; }
 body.win #tabbar { padding-right: 146px; }
+
+/* ---------- shortcuts window ---------- */
+#shortcuts { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: center; align-items: flex-start; padding-top: 70px; z-index: 105; }
+.shortcuts-box { width: min(560px, 92vw); padding: 12px 16px 12px; }
+.sc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
+#scList { max-height: 65vh; overflow-y: auto; }
+#scList h4 { margin: 12px 0 4px; color: var(--faint); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+#scList .sc { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; border-bottom: 1px solid var(--line); color: var(--muted); }
+#scList .sc:last-child { border-bottom: 0; }
+#scList kbd { font: 12px/1.6 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; color: var(--text); background: var(--panel-2); border: 1px solid #3a3a44; border-radius: 5px; padding: 0 6px; margin-left: 3px; }
+.shortcuts-box .modal-hint { text-align: left; margin-top: 10px; line-height: 1.4; }
+#helpBtn { font-size: 13px; font-weight: 600; width: 26px; }
+
+/* ---------- dragging panes ---------- */
+.pane-head { cursor: grab; }
+.pane-head button { cursor: pointer; }
+body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; }
+body.pane-dragging .xterm { pointer-events: none; }
+.pane.drag-src { opacity: .45; }
+#dropHint { position: fixed; z-index: 50; pointer-events: none; background: rgba(217,119,87,.18); border: 2px solid var(--accent); border-radius: 8px; transition: left .08s, top .08s, width .08s, height .08s; }
+#dragGhost { position: fixed; z-index: 60; pointer-events: none; padding: 4px 10px; border-radius: 7px; background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.45); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.tab.drop-target { background: rgba(217,119,87,.22); box-shadow: 0 0 0 1px var(--accent); }
+
+/* ---------- update banner ---------- */
+#updateBtn { margin-left: auto; flex: none; border: 1px solid var(--accent); background: rgba(217,119,87,.14); color: var(--text); border-radius: 7px; padding: 3px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+#updateBtn:hover { background: rgba(217,119,87,.28); }
+#updateBtn.downloading { border-color: var(--line); background: transparent; color: var(--muted); cursor: default; }
+#updateBtn.available { border-color: #45454f; background: var(--panel-2); }
+
+/* ---------- new-release card ---------- */
+#updateCard { position: fixed; right: 16px; bottom: 16px; z-index: 90; width: 340px; background: var(--panel); border: 1px solid #3a3a44; border-top: 2px solid var(--accent); border-radius: 10px; box-shadow: 0 16px 48px rgba(0,0,0,.55); padding: 13px 15px 12px; }
+.uc-title { font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
+.uc-text { color: var(--muted); line-height: 1.45; }
+.uc-text b { color: var(--text); }
+.uc-text a, #updateCard a { color: var(--accent); text-decoration: none; }
+.uc-auto { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: var(--text); cursor: pointer; }
+.uc-auto input { accent-color: var(--accent); margin: 0; }
+.uc-error { color: #ef6f6c; margin-top: 8px; font-size: 12px; }
+.uc-buttons { display: flex; justify-content: flex-end; gap: 7px; margin-top: 12px; }
+.uc-buttons button, #setCheck { border: 1px solid #3a3a44; background: var(--panel-2); color: var(--text); border-radius: 7px; padding: 5px 13px; cursor: pointer; }
+.uc-buttons button.primary { background: var(--accent); border-color: var(--accent); color: #1a1310; font-weight: 600; }
+.uc-buttons button:hover, #setCheck:hover { filter: brightness(1.12); }
+
+/* ---------- settings ---------- */
+#settings { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; justify-content: center; align-items: flex-start; padding-top: 90px; z-index: 105; }
+.settings-box { width: min(520px, 92vw); padding: 12px 16px 8px; }
+.settings-box h4 { margin: 10px 0 2px; color: var(--faint); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.set-row:last-child { border-bottom: 0; }
+.set-row b { display: block; font-weight: 500; }
+.set-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.4; }
+label.set-row { cursor: pointer; }
+.switch { appearance: none; flex: none; width: 34px; height: 20px; border-radius: 10px; background: #3a3a44; position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #e6e4df; transition: transform .15s; }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(14px); }
+#setCheck { flex: none; }
+#setCheck:disabled { opacity: .5; cursor: default; }

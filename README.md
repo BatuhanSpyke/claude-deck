@@ -23,11 +23,19 @@ A desktop app for [Claude Code](https://claude.com/claude-code) CLI sessions. It
 2. Run **Claude Deck.exe**. If SmartScreen says "Windows protected your PC", click **More info → Run anyway**.
 3. Optional: right-click the exe and choose **Pin to Start** or **Pin to taskbar**.
 
+**Updates**
+
+Claude Deck checks GitHub for new releases every few hours. When one comes out, it asks whether to install it, and you can tick **Install updates automatically from now on**. You can change this any time under **Settings** (the gear in the tab bar, or ⌘, / Ctrl+,).
+
+With automatic updates on, new releases download in the background. An **Update · Restart** button then appears in the tab bar. Click it, or keep working and the update installs the next time you quit. After a restart your tabs reopen and sessions resume.
+
+On macOS this needs the app in a folder you can write to, such as **Applications**, not opened straight from Downloads.
+
 ## Features
 
 - **All sessions in one sidebar.** It reads `~/.claude/projects` and `~/.claude/sessions` and shows titles, projects and live status (busy, idle, needs attention). It also shows sessions running in other terminals.
 - **Real terminals.** Each pane runs `claude` in a real shell (xterm.js + node-pty). When Claude exits, you're left at a shell in the same folder.
-- **Split panes and tabs.** Split right or down, drag dividers, maximize a pane, and move between panes with Option/Alt + arrows.
+- **Split panes and tabs.** Split right or down, drag dividers, maximize a pane, and move between panes with Option/Alt + arrows. Drag a pane by its title bar to move it, swap it with another, or send it to another tab.
 - **Groups.** Save a tab's layout as a group. Opening it later resumes every session in its own folder.
 - **Session names.** Give sessions your own names. Claude's title stays visible as a description.
 - **Command palette** to jump to any session.
@@ -47,6 +55,8 @@ A desktop app for [Claude Code](https://claude.com/claude-code) CLI sessions. It
 | Rename session | ⇧⌘R | Ctrl+Shift+R |
 | Save tab as group | ⇧⌘S | Ctrl+Shift+S |
 | Go to tab 1–9 | ⌘1–9 | Ctrl+1–9 |
+| Settings | ⌘, | Ctrl+, |
+| Show all shortcuts | ⌘/ | Ctrl+Shift+/ |
 | Copy / paste | ⌘C / ⌘V | Ctrl+C (with a selection) or Ctrl+Shift+C / Ctrl+V |
 
 ## Requirements

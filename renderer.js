@@ -3,7 +3,7 @@ const D = window.deck;
 const IS_MAC = D.platform === 'darwin';
 // Shortcut labels are written Mac-style; on Windows show the Ctrl+Shift equivalents (see K in main.js)
 const WIN_KEYS = { '⌘N': 'Ctrl+Shift+N', '⌘T': 'Ctrl+Shift+T', '⇧⌘S': 'Ctrl+Shift+S', '⇧⌘R': 'Ctrl+Shift+R', '⌘D': 'Ctrl+Shift+D',
-  '⇧⌘D': 'Ctrl+Shift+E', '⌘W': 'Ctrl+Shift+W', '⌘B': 'Ctrl+Shift+B', '⌘P': 'Ctrl+Shift+P', '⇧⌘↵': 'Ctrl+Shift+Enter', '⌘↵': 'Ctrl+Enter' };
+  '⇧⌘D': 'Ctrl+Shift+E', '⌘W': 'Ctrl+Shift+W', '⌘B': 'Ctrl+Shift+B', '⌘P': 'Ctrl+Shift+P', '⇧⌘↵': 'Ctrl+Shift+Enter', '⌘↵': 'Ctrl+Enter', '⌘/': 'Ctrl+Shift+/', '⌘,': 'Ctrl+,' };
 const kb = (k) => IS_MAC ? k : WIN_KEYS[k] || k;
 const mod = (e) => IS_MAC ? e.metaKey : e.ctrlKey;  // "open in new tab" modifier
 const $ = (s) => document.querySelector(s);
@@ -94,6 +94,7 @@ function makePane() {
     if (e.target.dataset.a) return;
     if (p.sessionId) renameSession(p.sessionId);
   });
+  el.querySelector('.pane-head').addEventListener('mousedown', (e) => paneDragStart(e, key));
   new ResizeObserver(() => fitPane(p)).observe(p.body);
   panes.set(key, p);
   renderEmpty(p);
@@ -827,11 +828,100 @@ D.onCmd((cmd, a) => {
     case 'paneStep': stepPane(a); break;
     case 'zoomPane': toggleZoom(); break;
     case 'font': setFont(a); break;
+    case 'shortcuts': toggleShortcuts(); break;
+    case 'settings': toggleSettings(); break;
   }
 });
 
 $('#sideToggle').addEventListener('click', () => { state.sidebar = !state.sidebar; applySidebar(); });
 $('#addTab').addEventListener('click', () => newTab());
+$('#helpBtn').addEventListener('click', () => toggleShortcuts());
+// ---------- updates (checked/downloaded by the main process, see updater.js) ----------
+let upd = null, prefs = { autoUpdate: null };
+const updDismissed = () => store.get('updateDismissed', '');
+function showUpdateCard(show) {
+  const c = $('#updateCard');
+  if (!show) { c.classList.add('hidden'); return; }
+  $('#ucVersion').textContent = upd.version;
+  $('#ucCurrent').textContent = prefs.version || '';
+  $('#ucAuto').checked = !!prefs.autoUpdate;
+  $('#ucError').classList.toggle('hidden', !upd.error);
+  $('#ucError').textContent = upd.error ? `Download failed: ${upd.error}` : '';
+  c.classList.remove('hidden');
+}
+function renderUpdate() {
+  const b = $('#updateBtn'), st = upd?.state;
+  b.classList.toggle('hidden', !st);
+  b.classList.toggle('downloading', st === 'downloading');
+  b.classList.toggle('available', st === 'available');
+  b.textContent = st === 'ready' ? `Update ${upd.version} · Restart` : st === 'downloading' ? `Downloading ${upd.version}…` : st === 'available' ? `Update ${upd.version} available` : '';
+  b.title = st === 'ready' ? 'Restart to install the update. Your tabs reopen and sessions resume.' : '';
+  if (st !== 'available') showUpdateCard(false);
+  renderSettingsStatus();
+}
+D.onUpdate((info) => {
+  upd = info;
+  renderUpdate();
+  // a new release: ask once per version (or again if the download failed)
+  if (info.state === 'available' && (info.error || updDismissed() !== info.version)) showUpdateCard(true);
+});
+$('#updateBtn').addEventListener('click', async () => {
+  const st = upd?.state;
+  if (st === 'available') return showUpdateCard(true);
+  if (st !== 'ready') return;
+  const busy = [...panes.values()].filter((p) => p.status === 'busy');
+  if (busy.length && !(await D.confirmClose(`${busy.length === 1 ? `“${busy[0].title}” is` : `${busy.length} sessions are`} still working. Restart anyway? Sessions resume after the restart, but the current reply is interrupted.`))) return;
+  saveLayout();
+  D.updateRestart();
+});
+$('#ucInstall').addEventListener('click', () => {
+  if ($('#ucAuto').checked) D.setSetting('autoUpdate', true);   // also starts the download
+  else D.updateDownload();
+  showUpdateCard(false);
+});
+$('#ucLater').addEventListener('click', () => {
+  if ($('#ucAuto').checked) D.setSetting('autoUpdate', true);
+  store.set('updateDismissed', upd.version);
+  showUpdateCard(false);
+});
+$('#ucNotes').addEventListener('click', (e) => { e.preventDefault(); D.openReleases(); });
+
+// ---------- settings ----------
+function renderSettingsStatus(msg) {
+  const el = $('#setStatus'); if (!el) return;
+  $('#setAuto').checked = !!prefs.autoUpdate;
+  $('#setVersion').textContent = prefs.version || '';
+  const st = upd?.state;
+  el.textContent = msg || (!prefs.canUpdate ? (prefs.packaged === false ? 'Updates only work in the installed app.' : "This copy can't update itself. Move Claude Deck to your Applications folder.")
+    : st === 'ready' ? `${upd.version} is downloaded. Restart Claude Deck to install it.`
+    : st === 'downloading' ? `Downloading ${upd.version}…`
+    : st === 'available' ? `${upd.version} is available.`
+    : prefs.autoUpdate ? 'On: new releases install by themselves.' : "Off: you'll be asked when a new release comes out.");
+}
+async function toggleSettings(show = $('#settings').classList.contains('hidden')) {
+  const m = $('#settings');
+  if (!show) { m.classList.add('hidden'); tab() && panes.get(tab().focus)?.term?.focus(); return; }
+  prefs = await D.getSettings();
+  renderSettingsStatus();
+  m.classList.remove('hidden');
+  m.tabIndex = -1; m.focus();
+}
+$('#settingsBtn').addEventListener('click', () => toggleSettings());
+$('#setClose').addEventListener('click', () => toggleSettings(false));
+$('#settings').addEventListener('mousedown', (e) => { if (e.target.id === 'settings') toggleSettings(false); });
+$('#settings').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); toggleSettings(false); } });
+$('#setAuto').addEventListener('change', (e) => D.setSetting('autoUpdate', e.target.checked));
+$('#setCheck').addEventListener('click', async () => {
+  const b = $('#setCheck'); b.disabled = true; renderSettingsStatus('Checking…');
+  const r = await D.updateCheck();
+  b.disabled = false;
+  if (r.state === 'latest') renderSettingsStatus(`You're up to date.`);
+  else if (r.state === 'error') renderSettingsStatus(`Couldn't check: ${r.message || 'no connection'}`);
+  else renderSettingsStatus();
+  if (r.state === 'available') { upd = { state: 'available', version: r.version }; renderUpdate(); showUpdateCard(true); }
+});
+D.onSettings((s) => { prefs = { ...prefs, ...s }; renderSettingsStatus(); });
+D.getSettings().then((s) => { prefs = s; });
 $('#newBtn').addEventListener('click', () => newSession());
 $('#search').addEventListener('input', (e) => { state.query = e.target.value; renderSidebar(); });
 $('#projectFilter').addEventListener('change', (e) => { state.project = e.target.value; renderSidebar(); });
@@ -845,6 +935,120 @@ $('#resizer').addEventListener('mousedown', (e) => {
   const up = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); store.set('sideW', state.sideW); };
   addEventListener('mousemove', move); addEventListener('mouseup', up);
 });
+// ---------- drag panes to rearrange (by the pane's title bar) ----------
+// Drop on an edge of another pane → split there; middle → swap the two; on a tab → move the pane into that tab.
+function dropZone(r, x, y) {
+  const fx = (x - r.left) / r.width, fy = (y - r.top) / r.height;
+  const edge = Math.min(fx, 1 - fx, fy, 1 - fy);
+  if (edge > 0.25) return 'swap';
+  return edge === fx ? 'left' : edge === 1 - fx ? 'right' : edge === fy ? 'top' : 'bottom';
+}
+function zoneRect(r, z) {
+  if (z === 'left') return { left: r.left, top: r.top, width: r.width / 2, height: r.height };
+  if (z === 'right') return { left: r.left + r.width / 2, top: r.top, width: r.width / 2, height: r.height };
+  if (z === 'top') return { left: r.left, top: r.top, width: r.width, height: r.height / 2 };
+  if (z === 'bottom') return { left: r.left, top: r.top + r.height / 2, width: r.width, height: r.height / 2 };
+  return { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+function paneDragStart(e, key) {
+  if (e.button !== 0 || e.target.closest('button')) return;
+  const t = tab(); if (!t || t.zoom) return;
+  const sx = e.clientX, sy = e.clientY;
+  let dragging = false, ghost, hint, target = null;
+  const tabEls = () => [...$('#tabs').children];
+  const clear = () => { tabEls().forEach((x) => x.classList.remove('drop-target')); if (hint) hint.style.display = 'none'; };
+  const move = (ev) => {
+    if (!dragging) {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+      dragging = true;
+      const p = panes.get(key);
+      document.body.classList.add('pane-dragging'); p.el.classList.add('drag-src');
+      ghost = document.createElement('div'); ghost.id = 'dragGhost'; ghost.textContent = p.term ? p.title : 'Empty pane';
+      hint = document.createElement('div'); hint.id = 'dropHint';
+      document.body.append(hint, ghost);
+    }
+    ghost.style.left = ev.clientX + 12 + 'px'; ghost.style.top = ev.clientY + 10 + 'px';
+    clear(); target = null;
+    const under = document.elementFromPoint(ev.clientX, ev.clientY);
+    const tabEl = under?.closest('.tab');
+    if (tabEl) {
+      const i = tabEls().indexOf(tabEl);
+      if (i >= 0 && i !== state.active) { tabEl.classList.add('drop-target'); target = { tab: i }; }
+      return;
+    }
+    const p = paneAt(under || document.body);
+    if (!p || p.key === key || tabOf(p.key) !== state.active) return;
+    const r = p.el.getBoundingClientRect(), z = dropZone(r, ev.clientX, ev.clientY), zr = zoneRect(r, z);
+    Object.assign(hint.style, { display: 'block', left: zr.left + 'px', top: zr.top + 'px', width: zr.width + 'px', height: zr.height + 'px' });
+    target = { key: p.key, zone: z };
+  };
+  const up = () => {
+    removeEventListener('mousemove', move); removeEventListener('mouseup', up);
+    if (!dragging) return;
+    document.body.classList.remove('pane-dragging'); panes.get(key)?.el.classList.remove('drag-src');
+    ghost.remove(); hint.remove(); clear();
+    if (target) dropPane(key, target);
+  };
+  addEventListener('mousemove', move); addEventListener('mouseup', up);
+}
+function dropPane(key, target) {
+  const from = tabOf(key); if (from < 0) return;
+  const t = state.tabs[from];
+  if (target.tab != null) {   // move into another tab, split beside its focused pane
+    const dest = state.tabs[target.tab];
+    if (leaves(t.root).length === 1) state.tabs.splice(from, 1);
+    else { t.root = remove(t.root, key); if (t.focus === key) t.focus = leaves(t.root)[0]; }
+    const dk = dest.focus;
+    const r = panes.get(dk).el.getBoundingClientRect();
+    dest.root = replace(dest.root, dk, (n) => ({ kind: 'split', dir: r.width / 2 > r.height * 1.1 ? 'h' : 'v', a: n, b: leaf(key), ratio: 0.5 }));
+    dest.focus = key; dest.zoom = null;
+    state.active = state.tabs.indexOf(dest);
+    render();
+    return;
+  }
+  const other = target.key;
+  if (target.zone === 'swap') {
+    const sw = (n) => n.kind === 'pane' ? (n.key === key ? leaf(other) : n.key === other ? leaf(key) : n) : { ...n, a: sw(n.a), b: sw(n.b) };
+    t.root = sw(t.root);
+  } else {
+    const before = target.zone === 'left' || target.zone === 'top';
+    t.root = remove(t.root, key);
+    t.root = replace(t.root, other, (n) => ({ kind: 'split', dir: target.zone === 'left' || target.zone === 'right' ? 'h' : 'v',
+      a: before ? leaf(key) : n, b: before ? n : leaf(key), ratio: 0.5 }));
+  }
+  t.focus = key;
+  render();
+}
+
+// ---------- keyboard shortcuts window ----------
+const SHORTCUTS = [
+  ['Sessions', [
+    ['New Claude session', '⌘N', 'Ctrl+Shift+N'], ['Find session', '⌘P', 'Ctrl+Shift+P'],
+    ['Rename session', '⇧⌘R', 'Ctrl+Shift+R'], ['Save tab as group', '⇧⌘S', 'Ctrl+Shift+S'], ['Toggle sidebar', '⌘B', 'Ctrl+Shift+B']]],
+  ['Panes', [
+    ['Split right (side by side)', '⌘D', 'Ctrl+Shift+D'], ['Split down (stacked)', '⇧⌘D', 'Ctrl+Shift+E'],
+    ['Move between panes', '⌥ ←→↑↓', 'Alt ←→↑↓'], ['Next / previous pane', '⌘] / ⌘[', 'Ctrl+Shift+] / ['],
+    ['Maximize pane', '⇧⌘↵', 'Ctrl+Shift+Enter'], ['Close pane', '⌘W', 'Ctrl+Shift+W']]],
+  ['Tabs', [
+    ['New tab', '⌘T', 'Ctrl+Shift+T'], ['Next / previous tab', '⇧⌘] / ⇧⌘[', 'Ctrl+Tab / Ctrl+Shift+Tab'],
+    ['Go to tab 1–9', '⌘1–9', 'Ctrl+1–9'], ['Close tab', '⇧⌘W', 'Ctrl+Shift+Q']]],
+  ['Text', [
+    ['Bigger / smaller / reset text', '⌘= / ⌘- / ⌘0', 'Ctrl+= / Ctrl+- / Ctrl+0'],
+    ['Copy / paste', '⌘C / ⌘V', 'Ctrl+Shift+C / Ctrl+Shift+V']]],
+  ['App', [['Settings', '⌘,', 'Ctrl+,'], ['This window', '⌘/', 'Ctrl+Shift+/']]],
+];
+function toggleShortcuts(show = $('#shortcuts').classList.contains('hidden')) {
+  const m = $('#shortcuts');
+  if (!show) { m.classList.add('hidden'); tab() && panes.get(tab().focus)?.term?.focus(); return; }
+  $('#scList').innerHTML = SHORTCUTS.map(([h, rows]) => `<h4>${h}</h4>` + rows.map(([label, mac, win]) =>
+    `<div class="sc"><span>${esc(label)}</span><span>${(IS_MAC ? mac : win).split(' / ').map((k) => `<kbd>${esc(k)}</kbd>`).join(' ')}</span></div>`).join('')).join('');
+  m.classList.remove('hidden');
+  m.tabIndex = -1; m.focus();
+}
+$('#shortcuts').addEventListener('mousedown', (e) => { if (e.target.id === 'shortcuts') toggleShortcuts(false); });
+$('#scClose').addEventListener('click', () => toggleShortcuts(false));
+$('#shortcuts').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); toggleShortcuts(false); } });
+
 // ---------- drag & drop files into a pane (types the escaped path, like iTerm) ----------
 const shellQuote = (s) => s.replace(/([^A-Za-z0-9_\-.,:\/@%+=])/g, '\\$1');
 const paneAt = (target) => { const el = target.closest?.('.pane'); return el && [...panes.values()].find((p) => p.el === el); };
@@ -870,7 +1074,7 @@ window.addEventListener('focus', () => { const p = tab() && panes.get(tab().focu
 
 document.body.classList.add(IS_MAC ? 'mac' : 'win');
 if (!IS_MAC) for (const el of document.querySelectorAll('[title],[placeholder]')) for (const a of ['title', 'placeholder'])
-  if (el.getAttribute(a)) el.setAttribute(a, el.getAttribute(a).replace(/⇧?⌘[A-Z↵]/g, kb));
+  if (el.getAttribute(a)) el.setAttribute(a, el.getAttribute(a).replace(/⇧?⌘[A-Z↵\/,]/g, kb));
 
 (async () => {
   applySidebar();
