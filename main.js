@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog, shell, clipboard, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell, clipboard, nativeTheme, screen } = require('electron');
 nativeTheme.themeSource = 'dark';
 const path = require('path');
 const os = require('os');
@@ -13,9 +13,41 @@ let win;
 const ptys = new Map();       // ptyId -> { proc, paneKey }
 let nextPty = 1;
 
+// Reopen where you left the window: same screen, size and spot, or maximized/full screen there.
+// Saved bounds are only used if they still overlap a connected display (e.g. an unplugged monitor).
+const overlaps = (b, a) => b.x < a.x + a.width - 80 && b.x + b.width > a.x + 80 && b.y < a.y + a.height - 40 && b.y + b.height > a.y;
+function savedBounds() {
+  const b = settings.window;
+  if (!b || !(b.width > 0 && b.height > 0) || b.x == null) return {};
+  // the screen it was on (macOS can keep a maximized window's old position from another screen)
+  const d = b.display && screen.getAllDisplays().find((x) => x.bounds.x === b.display.x && x.bounds.y === b.display.y
+    && x.bounds.width === b.display.width && x.bounds.height === b.display.height);
+  if (d && !overlaps(b, d.workArea)) {
+    const a = d.workArea, width = Math.min(b.width, a.width), height = Math.min(b.height, a.height);
+    return { x: a.x + Math.round((a.width - width) / 2), y: a.y + Math.round((a.height - height) / 2), width, height };
+  }
+  const visible = screen.getAllDisplays().some(({ workArea: a }) => overlaps(b, a));
+  return visible ? { x: b.x, y: b.y, width: b.width, height: b.height } : { width: b.width, height: b.height };
+}
+function trackWindow(w) {
+  let t;
+  const save = () => {
+    if (w.isDestroyed()) return;
+    const max = w.isMaximized(), full = w.isFullScreen();
+    // keep the normal size while maximized/full screen, so un-maximizing after a restart restores it
+    const b = full ? (settings.window || w.getNormalBounds()) : max ? w.getNormalBounds() : w.getBounds();
+    const display = screen.getDisplayMatching(w.getBounds()).bounds;
+    settings.window = { x: b.x, y: b.y, width: b.width, height: b.height, maximized: max, fullscreen: full, display };
+    saveSettings();
+  };
+  const later = () => { clearTimeout(t); t = setTimeout(save, 400); };
+  for (const ev of ['resize', 'move', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) w.on(ev, later);
+  w.on('close', () => { clearTimeout(t); save(); });
+}
+
 function createWindow() {
   win = new BrowserWindow({
-    width: 1400, height: 860, minWidth: 700, minHeight: 400,
+    width: 1400, height: 860, ...savedBounds(), minWidth: 700, minHeight: 400,
     ...(IS_MAC
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 13 } }
       : { titleBarStyle: 'hidden', titleBarOverlay: { color: '#1d1d22', symbolColor: '#9a978f', height: 40 } }),
@@ -23,6 +55,9 @@ function createWindow() {
     backgroundColor: '#16161a',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
+  if (settings.window?.maximized) win.maximize();
+  if (settings.window?.fullscreen) win.setFullScreen(true);
+  trackWindow(win);
   win.loadFile('index.html');
   win.webContents.on('did-finish-load', () => { const st = updater.status(); if (st) win.webContents.send('update', st); });
   // Dropping a file must never navigate the window away from the app
@@ -53,6 +88,7 @@ function fixSpawnHelper() {
 fixSpawnHelper();
 // The window can be gone while a shell is still exiting (e.g. while quitting); a throw here aborts the app
 const toWin = (...a) => { try { if (win && !win.isDestroyed()) win.webContents.send(...a); } catch {} };
+let quitting = false;
 // Windows: prefer PowerShell 7, fall back to the built-in Windows PowerShell
 function winShell() {
   const pwsh = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe');
@@ -83,7 +119,8 @@ ipcMain.handle('pty:create', (_e, { cwd, cmd, cols, rows, paneKey }) => {
   proc.onData((d) => toWin('pty:data', id, d));
   proc.onExit(({ exitCode }) => {
     ptys.delete(id);
-    toWin('pty:exit', id, exitCode);
+    // While quitting, shells ending must not close their panes: that would save a shrunken layout
+    if (!quitting) toWin('pty:exit', id, exitCode);
   });
   return { id, pid: proc.pid };
 });
@@ -175,6 +212,11 @@ function setSetting(k, v) {
   if (win) win.webContents.send('settings', settings);
   if (k === 'autoUpdate' && v) updater.download();   // turned on while a release is waiting
 }
+// A restore-layout.json in the data folder is loaded once on the next start, then removed
+ipcMain.handle('takeRestore', () => {
+  const f = path.join(app.getPath('userData'), 'restore-layout.json');
+  try { const v = JSON.parse(require('fs').readFileSync(f, 'utf8')); require('fs').renameSync(f, f + '.used'); return v; } catch { return null; }
+});
 ipcMain.handle('settings:get', () => ({ ...settings, version: app.getVersion(), canUpdate: updater.supported(), packaged: app.isPackaged }));
 ipcMain.on('settings:set', (_e, k, v) => setSetting(k, v));
 ipcMain.handle('update:check', () => updater.check({ manual: true, autoInstall: !!settings.autoUpdate }));
@@ -277,13 +319,13 @@ app.on('activate', () => { if (!win) createWindow(); });
 app.on('window-all-closed', () => app.quit());
 // Quit only after every shell has exited. If node-pty reports an exit while Node is already being torn
 // down, it calls into JS that no longer exists and the app aborts ("quit unexpectedly").
-let quitting = false;
 app.on('before-quit', (e) => {
   if (!quitting) updater.apply(false);   // downloaded (auto, or you said Install) but not restarted yet: install on the way out
   if (!ptys.size) return;
   e.preventDefault();
   if (quitting) return;
   quitting = true;
+  toWin('quitting');   // the window stops saving the layout from here on
   for (const { proc } of ptys.values()) { try { proc.kill(); } catch {} }
   const t0 = Date.now();
   let forced = false;

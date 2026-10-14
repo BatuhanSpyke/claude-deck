@@ -7,9 +7,9 @@
   "scripts": {
     "start": "electron .",
     "rebuild": "electron-rebuild -f -w node-pty",
-    "package": "electron-packager . \"Claude Deck\" --platform=darwin --arch=arm64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|build/(?!icon\\.png$))\" --app-bundle-id=local.claude-deck --icon=build/icon.icns",
-    "package:win": "electron-packager . \"Claude Deck\" --platform=win32 --arch=x64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|build/(?!icon\\.png$))\" --icon=build/icon.ico",
-    "package:win-noicon": "electron-packager . \"Claude Deck\" --platform=win32 --arch=x64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|build/(?!icon\\.png$))\""
+    "package": "electron-packager . \"Claude Deck\" --platform=darwin --arch=arm64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|sign\\.sh|build/(?!icon\\.png$))\" --app-bundle-id=local.claude-deck --icon=build/icon.icns && ./sign.sh \"dist/Claude Deck-darwin-arm64/Claude Deck.app\"",
+    "package:win": "electron-packager . \"Claude Deck\" --platform=win32 --arch=x64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|sign\\.sh|build/(?!icon\\.png$))\" --icon=build/icon.ico",
+    "package:win-noicon": "electron-packager . \"Claude Deck\" --platform=win32 --arch=x64 --out=dist --overwrite --asar.unpack=\"**/node_modules/node-pty/**\" --ignore=\"^/(dist|\\.github|update\\.sh|sign\\.sh|build/(?!icon\\.png$))\""
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

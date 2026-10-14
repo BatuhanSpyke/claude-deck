@@ -56,6 +56,13 @@ function ago(ms) {
 const tab = () => state.tabs[state.active];
 const session = (id) => state.sessions.find((s) => s.id === id);
 
+// Esc cancels whatever drag is in progress. Captured before the terminal sees it, and only while dragging.
+function escCancels(fn) {
+  const h = (e) => { if (e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); fn(); };
+  addEventListener('keydown', h, true);
+  return () => removeEventListener('keydown', h, true);
+}
+
 // ---------- layout tree ----------
 const leaf = (key) => ({ kind: 'pane', key });
 function leaves(n, out = []) { if (!n) return out; if (n.kind === 'pane') out.push(n.key); else { leaves(n.a, out); leaves(n.b, out); } return out; }
@@ -292,13 +299,15 @@ function build(n) {
   wrapA.style.flex = `${n.ratio} 1 0`; wrapB.style.flex = `${1 - n.ratio} 1 0`;
   d.addEventListener('mousedown', (e) => {
     e.preventDefault();
-    const r = el.getBoundingClientRect();
+    const r = el.getBoundingClientRect(), start = n.ratio;
+    const set = (v) => { n.ratio = v; wrapA.style.flex = `${v} 1 0`; wrapB.style.flex = `${1 - v} 1 0`; };
     const move = (ev) => {
       const x = n.dir === 'h' ? (ev.clientX - r.left) / r.width : (ev.clientY - r.top) / r.height;
-      n.ratio = Math.min(0.9, Math.max(0.1, x));
-      wrapA.style.flex = `${n.ratio} 1 0`; wrapB.style.flex = `${1 - n.ratio} 1 0`;
+      set(Math.min(0.9, Math.max(0.1, x)));
     };
-    const up = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); saveLayout(); };
+    const end = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); noEsc(); };
+    const up = () => { end(); saveLayout(); };
+    const noEsc = escCancels(() => { end(); set(start); });
     addEventListener('mousemove', move); addEventListener('mouseup', up);
   });
   el.append(wrapA, d, wrapB);
@@ -311,6 +320,49 @@ function wrap(child) {
   return w;
 }
 
+// Drag a tab sideways to change the order
+function tabDragStart(e, from) {
+  const sx = e.clientX;
+  let dragging = false, to = from, noEsc = () => {};
+  const els = () => [...$('#tabs').children];
+  const move = (ev) => {
+    if (!dragging) {
+      if (Math.abs(ev.clientX - sx) < 5) return;
+      dragging = true; tabDrag = { from };
+      noEsc = escCancels(() => { to = from; up(); });   // Esc: back to its old spot
+      document.body.classList.add('tab-dragging');
+      els()[from].classList.add('dragging');
+    }
+    const list = els(), me = list[from];
+    me.style.transform = `translateX(${ev.clientX - sx}px)`;
+    // where would it land: count the other tabs whose middle is left of the mouse
+    const x = ev.clientX;
+    to = 0;
+    list.forEach((t, j) => { if (j === from) return; const r = t.getBoundingClientRect(); if (x > r.left + r.width / 2) to++; });
+    const w = me.getBoundingClientRect().width + 3;
+    list.forEach((t, j) => {
+      if (j === from) return;
+      const shift = from < to && j > from && j <= to ? -w : from > to && j >= to && j < from ? w : 0;
+      t.style.transform = shift ? `translateX(${shift}px)` : '';
+    });
+  };
+  const up = () => {
+    removeEventListener('mousemove', move); removeEventListener('mouseup', up); noEsc();
+    if (!dragging) return;
+    document.body.classList.remove('tab-dragging');
+    tabDrag = null;
+    if (to !== from) {
+      const activeId = tab()?.id;
+      const [t] = state.tabs.splice(from, 1);
+      state.tabs.splice(to, 0, t);
+      state.active = state.tabs.findIndex((x) => x.id === activeId);
+      saveLayout();
+    }
+    renderTabs();
+  };
+  addEventListener('mousemove', move); addEventListener('mouseup', up);
+}
+
 function paneStatusClass(keys) {
   const ps = keys.map((k) => panes.get(k));
   if (ps.some((p) => p.attn)) return 'attn';
@@ -319,7 +371,9 @@ function paneStatusClass(keys) {
   return '';
 }
 
+let tabDrag = null;   // while reordering tabs, skip re-renders so the dragged tab stays under the mouse
 function renderTabs() {
+  if (tabDrag) return;
   const el = $('#tabs');
   el.replaceChildren(...state.tabs.map((t, i) => {
     const ks = leaves(t.root);
@@ -335,6 +389,7 @@ function renderTabs() {
       // Tabs are re-rendered on click, so detect the double-click from the click count
       if (e.detail === 2) { e.preventDefault(); if (g) saveTabAsGroup(i); else { const fp = panes.get(t.focus); if (fp?.sessionId) renameSession(fp.sessionId); } return; }
       if (state.active !== i) { state.active = i; render(false); }
+      tabDragStart(e, i);
     });
     d.querySelector('.x').addEventListener('click', () => closeTab(i));
     d.addEventListener('auxclick', (e) => { if (e.button === 1) closeTab(i); });
@@ -555,6 +610,7 @@ $('#palette').addEventListener('mousedown', (e) => { if (e.target.id === 'palett
 // ---------- pty events ----------
 D.onPtyData((id, d) => byPty.get(id)?.term.write(d));
 D.onPtyExit((id) => {
+  if (quitting) return;
   const p = byPty.get(id); if (!p) return;
   byPty.delete(id); p.ptyId = null;
   closePane(p.key);
@@ -623,8 +679,10 @@ function serialize(n) {
   return { kind: 'split', dir: n.dir, ratio: n.ratio, a: serialize(n.a), b: serialize(n.b) };
 }
 let restoring = true;
+let quitting = false;
+D.onQuitting(() => { quitting = true; });
 function saveLayout() {
-  if (restoring) return;
+  if (restoring || quitting) return;
   // Tabs that belong to a group keep the group up to date (new panes, /clear'd sessions, resizes…)
   for (const t of state.tabs) { const g = groupOf(t); if (g) g.layout = serialize(t.root); }
   store.set('groups', state.groups);
@@ -931,8 +989,11 @@ document.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', ()
 }));
 $('#resizer').addEventListener('mousedown', (e) => {
   e.preventDefault();
+  const start = state.sideW;
   const move = (ev) => { state.sideW = Math.min(520, Math.max(200, ev.clientX)); applySidebar(); };
-  const up = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); store.set('sideW', state.sideW); };
+  const end = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); noEsc(); };
+  const up = () => { end(); store.set('sideW', state.sideW); };
+  const noEsc = escCancels(() => { end(); state.sideW = start; applySidebar(); });
   addEventListener('mousemove', move); addEventListener('mouseup', up);
 });
 // ---------- drag panes to rearrange (by the pane's title bar) ----------
@@ -954,16 +1015,18 @@ function paneDragStart(e, key) {
   if (e.button !== 0 || e.target.closest('button')) return;
   const t = tab(); if (!t || t.zoom) return;
   const sx = e.clientX, sy = e.clientY;
-  let dragging = false, ghost, hint, target = null;
+  let dragging = false, ghost, hint, target = null, noEsc = () => {};
   const tabEls = () => [...$('#tabs').children];
-  const clear = () => { tabEls().forEach((x) => x.classList.remove('drop-target')); if (hint) hint.style.display = 'none'; };
+  const clear = () => { tabEls().forEach((x) => x.classList.remove('drop-target')); $('#tabbar').classList.remove('drop-newtab'); if (hint) hint.style.display = 'none'; };
   const move = (ev) => {
     if (!dragging) {
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
       dragging = true;
+      noEsc = escCancels(end);   // Esc: put it back where it was
       const p = panes.get(key);
       document.body.classList.add('pane-dragging'); p.el.classList.add('drag-src');
       ghost = document.createElement('div'); ghost.id = 'dragGhost'; ghost.textContent = p.term ? p.title : 'Empty pane';
+      ghost.insertAdjacentHTML('beforeend', '<small>esc to cancel</small>');
       hint = document.createElement('div'); hint.id = 'dropHint';
       document.body.append(hint, ghost);
     }
@@ -976,24 +1039,40 @@ function paneDragStart(e, key) {
       if (i >= 0 && i !== state.active) { tabEl.classList.add('drop-target'); target = { tab: i }; }
       return;
     }
+    // anywhere else on the tab bar: make it its own tab
+    if (under?.closest('#tabbar')) {
+      if (leaves(tab().root).length > 1) { $('#tabbar').classList.add('drop-newtab'); target = { newTab: true }; }
+      return;
+    }
     const p = paneAt(under || document.body);
     if (!p || p.key === key || tabOf(p.key) !== state.active) return;
     const r = p.el.getBoundingClientRect(), z = dropZone(r, ev.clientX, ev.clientY), zr = zoneRect(r, z);
     Object.assign(hint.style, { display: 'block', left: zr.left + 'px', top: zr.top + 'px', width: zr.width + 'px', height: zr.height + 'px' });
     target = { key: p.key, zone: z };
   };
-  const up = () => {
-    removeEventListener('mousemove', move); removeEventListener('mouseup', up);
-    if (!dragging) return;
+  const end = () => {
+    removeEventListener('mousemove', move); removeEventListener('mouseup', up); noEsc();
+    if (!dragging) return false;
     document.body.classList.remove('pane-dragging'); panes.get(key)?.el.classList.remove('drag-src');
     ghost.remove(); hint.remove(); clear();
-    if (target) dropPane(key, target);
+    return true;
   };
+  const up = () => { if (end() && target) dropPane(key, target); };
   addEventListener('mousemove', move); addEventListener('mouseup', up);
 }
 function dropPane(key, target) {
   const from = tabOf(key); if (from < 0) return;
   const t = state.tabs[from];
+  if (target.newTab) {   // pull it out into a tab of its own, right after this one
+    if (leaves(t.root).length < 2) return;
+    t.root = remove(t.root, key);
+    if (t.focus === key) t.focus = leaves(t.root)[0];
+    if (t.zoom === key) t.zoom = null;
+    state.tabs.splice(from + 1, 0, { id: 't' + seq++, root: leaf(key), focus: key, zoom: null });
+    state.active = from + 1;
+    render();
+    return;
+  }
   if (target.tab != null) {   // move into another tab, split beside its focused pane
     const dest = state.tabs[target.tab];
     if (leaves(t.root).length === 1) state.tabs.splice(from, 1);
@@ -1079,6 +1158,9 @@ if (!IS_MAC) for (const el of document.querySelectorAll('[title],[placeholder]')
 (async () => {
   applySidebar();
   try { await loadSessions(); } catch {}
+  const r = await D.takeRestore();
+  if (r?.layout) { store.set('layout', r.layout); }
+  if (r?.groups) { store.set('groups', r.groups); state.groups = r.groups; }
   restoreLayout();
   setInterval(refresh, 2000);
 })();

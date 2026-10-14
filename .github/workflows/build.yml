@@ -31,14 +31,17 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run ${{ matrix.script }}
-      # node-pty's spawn-helper must be executable or no terminal can start ("posix_spawnp failed")
+      # Sign with the project's certificate (secrets MAC_CERT_P12 = base64 of deck.p12, MAC_CERT_PASSWORD) so the
+      # app keeps the same identity across updates and macOS remembers its permissions. Ad-hoc without them.
+      # sign.sh also makes node-pty's spawn-helper executable (or no terminal can start: "posix_spawnp failed").
       - if: runner.os == 'macOS'
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          DECK_P12_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
         run: |
-          chmod +x "dist/${{ matrix.dir }}/Claude Deck.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/"*/spawn-helper
+          if [ -n "$MAC_CERT_P12" ]; then echo "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/deck.p12"; export DECK_P12="$RUNNER_TEMP/deck.p12"; fi
+          ./sign.sh "dist/${{ matrix.dir }}/Claude Deck.app"
           for f in "dist/${{ matrix.dir }}/Claude Deck.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-"*/spawn-helper; do test -x "$f" || { echo "not executable: $f"; exit 1; }; done
-      # No Apple Developer ID: ad-hoc sign so macOS shows "unidentified developer" instead of "damaged"
-      - if: runner.os == 'macOS'
-        run: codesign --force --deep --sign - "dist/${{ matrix.dir }}/Claude Deck.app"
       - name: Zip
         shell: bash
         run: |
