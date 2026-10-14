@@ -1,7 +1,7 @@
 {
   "name": "claude-deck",
   "productName": "Claude Deck",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "main.js",
   "private": true,
   "scripts": {
