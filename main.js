@@ -39,6 +39,20 @@ function ownedPids() {
 ipcMain.handle('sessions', () => scan(ownedPids()));
 
 // ---------- pty ----------
+// node-pty starts shells through its spawn-helper binary. Zips and CI checkouts can drop its executable bit,
+// and then every terminal fails with "posix_spawnp failed", so make sure it's executable.
+function fixSpawnHelper() {
+  if (IS_WIN) return;
+  const fs = require('fs');
+  const root = path.join(__dirname, 'node_modules', 'node-pty').replace('app.asar', 'app.asar.unpacked');
+  for (const dir of [path.join(root, 'build', 'Release'), path.join(root, 'prebuilds', `${process.platform}-${process.arch}`)]) {
+    const f = path.join(dir, 'spawn-helper');
+    try { if (!(fs.statSync(f).mode & 0o111)) fs.chmodSync(f, 0o755); } catch {}
+  }
+}
+fixSpawnHelper();
+// The window can be gone while a shell is still exiting (e.g. while quitting); a throw here aborts the app
+const toWin = (...a) => { try { if (win && !win.isDestroyed()) win.webContents.send(...a); } catch {} };
 // Windows: prefer PowerShell 7, fall back to the built-in Windows PowerShell
 function winShell() {
   const pwsh = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe');
@@ -66,10 +80,10 @@ ipcMain.handle('pty:create', (_e, { cwd, cmd, cols, rows, paneKey }) => {
   const proc = pty.spawn(file, args, { name: 'xterm-256color', cols, rows, cwd: dir, env });
   const id = nextPty++;
   ptys.set(id, { proc, paneKey });
-  proc.onData((d) => win && win.webContents.send('pty:data', id, d));
+  proc.onData((d) => toWin('pty:data', id, d));
   proc.onExit(({ exitCode }) => {
     ptys.delete(id);
-    win && win.webContents.send('pty:exit', id, exitCode);
+    toWin('pty:exit', id, exitCode);
   });
   return { id, pid: proc.pid };
 });
@@ -257,11 +271,30 @@ app.setName('Claude Deck');
 if (process.env.DECK_USERDATA) app.setPath('userData', process.env.DECK_USERDATA);
 app.whenReady().then(() => {
   loadSettings(); buildMenu(); createWindow();
-  updater.start((info) => win && win.webContents.send('update', info), () => !!settings.autoUpdate);
+  updater.start((info) => toWin('update', info), () => !!settings.autoUpdate);
 });
 app.on('activate', () => { if (!win) createWindow(); });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => {
-  updater.apply(false);   // downloaded (auto, or you said Install) but not restarted yet: install on the way out
+// Quit only after every shell has exited. If node-pty reports an exit while Node is already being torn
+// down, it calls into JS that no longer exists and the app aborts ("quit unexpectedly").
+let quitting = false;
+app.on('before-quit', (e) => {
+  if (!quitting) updater.apply(false);   // downloaded (auto, or you said Install) but not restarted yet: install on the way out
+  if (!ptys.size) return;
+  e.preventDefault();
+  if (quitting) return;
+  quitting = true;
   for (const { proc } of ptys.values()) { try { proc.kill(); } catch {} }
+  const t0 = Date.now();
+  let forced = false;
+  const wait = setInterval(() => {
+    if (!forced && Date.now() - t0 > 1500) {   // something ignored SIGHUP
+      forced = true;
+      for (const { proc } of ptys.values()) { try { proc.kill('SIGKILL'); } catch {} }
+    }
+    if (ptys.size && Date.now() - t0 < 4000) return;
+    clearInterval(wait);
+    ptys.clear();
+    setTimeout(() => app.quit(), 150);   // let the last exit callbacks run first
+  }, 50);
 });

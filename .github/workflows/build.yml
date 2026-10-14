@@ -31,6 +31,11 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run ${{ matrix.script }}
+      # node-pty's spawn-helper must be executable or no terminal can start ("posix_spawnp failed")
+      - if: runner.os == 'macOS'
+        run: |
+          chmod +x "dist/${{ matrix.dir }}/Claude Deck.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/"*/spawn-helper
+          for f in "dist/${{ matrix.dir }}/Claude Deck.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/darwin-"*/spawn-helper; do test -x "$f" || { echo "not executable: $f"; exit 1; }; done
       # No Apple Developer ID: ad-hoc sign so macOS shows "unidentified developer" instead of "damaged"
       - if: runner.os == 'macOS'
         run: codesign --force --deep --sign - "dist/${{ matrix.dir }}/Claude Deck.app"
@@ -47,3 +52,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.zip }}
+          # v1.2.3-rc1 tags become pre-releases: downloadable for testing, but never offered by the in-app updater
+          prerelease: ${{ contains(github.ref_name, '-') }}
