@@ -30,7 +30,9 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npm run ${{ matrix.script }}
+      # On failure, repeat the last lines as error annotations (those are visible without logging in)
+      - shell: bash
+        run: npm run ${{ matrix.script }} 2>&1 | tee build.log; rc=${PIPESTATUS[0]}; if [ $rc -ne 0 ]; then tail -25 build.log | sed 's/^/::error::/'; fi; exit $rc
       # Sign with the project's certificate (secrets MAC_CERT_P12 = base64 of deck.p12, MAC_CERT_PASSWORD) so the
       # app keeps the same identity across updates and macOS remembers its permissions. Ad-hoc without them.
       # sign.sh also makes node-pty's spawn-helper executable (or no terminal can start: "posix_spawnp failed").
