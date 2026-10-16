@@ -201,6 +201,17 @@ ipcMain.handle('menu', (_e, items) => new Promise((resolve) => {
 ipcMain.on('reveal', (_e, p) => shell.showItemInFolder(p));
 ipcMain.on('copy', (_e, text) => clipboard.writeText(text));
 
+// ---------- fun stats (worker thread: see stats-worker.js) ----------
+let statsJob = null;
+ipcMain.handle('stats', () => statsJob || (statsJob = new Promise((resolve) => {
+  const { Worker } = require('worker_threads');
+  const t0 = Date.now();
+  const w = new Worker(path.join(__dirname, 'stats-worker.js'), { workerData: { home: os.homedir(), cacheFile: path.join(app.getPath('userData'), 'stats-cache.json') } });
+  const done = (r) => { statsJob = null; resolve(r); };
+  w.once('message', (m) => done({ ...m, ms: Date.now() - t0 }));
+  w.once('error', (e) => done({ ok: false, error: e.message }));
+})));
+
 // ---------- settings / updates ----------
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 const settings = { autoUpdate: null };   // null = not chosen yet: ask when a release comes out
@@ -282,6 +293,7 @@ function buildMenu() {
     { label: 'View', submenu: [
       { label: 'Toggle Sidebar', accelerator: K.sidebar, click: () => send('toggleSidebar') },
       { label: 'Find Session', accelerator: K.find, click: () => send('findSession') },
+      { label: 'Your Stats', click: () => send('stats') },
       { type: 'separator' },
       { label: 'Next Tab', accelerator: K.nextTab, click: () => send('tabStep', 1) },
       { label: 'Previous Tab', accelerator: K.prevTab, click: () => send('tabStep', -1) },

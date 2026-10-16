@@ -888,6 +888,7 @@ D.onCmd((cmd, a) => {
     case 'font': setFont(a); break;
     case 'shortcuts': toggleShortcuts(); break;
     case 'settings': toggleSettings(); break;
+    case 'stats': toggleStats(); break;
   }
 });
 
@@ -943,6 +944,111 @@ $('#ucLater').addEventListener('click', () => {
   showUpdateCard(false);
 });
 $('#ucNotes').addEventListener('click', (e) => { e.preventDefault(); D.openReleases(); });
+
+// ---------- fun stats (computed locally by stats-worker.js; only counts, never your text) ----------
+const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n.toLocaleString();
+const usd = (n) => n >= 1000 ? '$' + Math.round(n).toLocaleString() : n >= 10 ? '$' + n.toFixed(0) : '$' + n.toFixed(2);
+const toolName = (t) => { const m = /^mcp__(.+?)__(.+)$/.exec(t); return m ? `${m[2]} (${m[1]})` : t; };
+const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const hourLabel = (h) => `${String(h).padStart(2, '0')}:00`;
+function barChart(values, tipOf, axis) {
+  const max = Math.max(1, ...values);
+  return `<div class="st-bars">${values.map((v, i) => `<i class="${v ? '' : 'zero'}" style="height:${v ? Math.max(3, (v / max) * 100) : 0}%" data-tip="${esc(tipOf(i, v))}"></i>`).join('')}</div>
+    <div class="st-axis">${axis.map((a) => `<span>${esc(a)}</span>`).join('')}</div>`;
+}
+function rankList(entries, label, unit, show = fmt) {
+  const max = Math.max(1e-9, ...entries.map((e) => e[1]));
+  return `<div class="st-list">${entries.map(([k, v]) => `<div class="st-row" data-tip="${esc(label(k))}: ${unit === '$' ? usd(v) : v.toLocaleString() + ' ' + unit}"><span class="n">${esc(label(k))}</span><span class="v">${show(v)}</span><span class="track"><i style="width:${(v / max) * 100}%"></i></span></div>`).join('')}</div>`;
+}
+function renderStats(r) {
+  const body = $('#stBody');
+  if (!r?.ok) { body.innerHTML = `<div class="st-loading">Couldn't read your sessions${r?.error ? ': ' + esc(r.error) : ''}.</div>`; return; }
+  const s = r.stats;
+  if (!s.sessions) { body.innerHTML = `<div class="st-loading">No Claude Code sessions yet. Start one and come back!</div>`; return; }
+  const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n);
+  const tools = Object.values(s.tools).reduce((a, b) => a + b, 0);
+  const words = s.out * 0.75, novels = words / 90000;
+  const totalTok = s.out + s.inTok + s.cacheWrite + s.cacheRead;
+  const cachePct = totalTok ? (s.cacheRead / totalTok) * 100 : 0;
+  const tokSplit = [['Re-read from cache', s.cacheRead], ['Saved to cache', s.cacheWrite], ['Written by Claude', s.out], ['Fresh input', s.inTok]];
+  const peak = s.hours.indexOf(Math.max(...s.hours));
+  const persona = peak < 7 ? '🌙 Night shift' : peak < 11 ? '🌅 Early bird' : peak < 17 ? '☀️ Day builder' : peak < 21 ? '🌆 Evening hacker' : '🦉 Night owl';
+  const work = s.hours.map((v, h) => [h, v]).filter(([h]) => h >= 9 && h <= 17);
+  const dip = work.length ? work.reduce((a, b) => (b[1] < a[1] ? b : a)) : null;
+  const topDow = s.weekdays.indexOf(Math.max(...s.weekdays));
+  const models = top(s.models, 4), modelTotal = Object.values(s.models).reduce((a, b) => a + b, 0) || 1;
+  const since = s.first ? new Date(s.first).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  $('#stSub').textContent = `${since ? 'Since ' + since + ' · ' : ''}counted on this computer from ~/.claude, nothing is sent anywhere`;
+  const facts = [
+    s.busiestDay && `Busiest day: <b>${new Date(s.busiestDay.day + 'T12:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</b> with <b>${s.busiestDay.prompts}</b> prompts.`,
+    s.longest && `Longest session: <b>${s.longest.prompts}</b> prompts in <b>${esc(base(s.longest.cwd))}</b>${s.longest.ms > 864e5 ? `, kept going for <b>${Math.round(s.longest.ms / 864e5)} days</b>` : ''}.`,
+    `Favourite day of the week: <b>${DOW[topDow]}</b>.`,
+    dip && dip[1] < Math.max(...s.hours) * 0.4 && `Quietest working hour: <b>${hourLabel(dip[0])}</b>. Lunch? 🥪`,
+    s.biggestTokDay && `Hungriest day: <b>${new Date(s.biggestTokDay.day + 'T12:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</b> with <b>${fmt(s.biggestTokDay.tokens)}</b> tokens.`,
+    s.prompts && `Each prompt you sent averaged <b>${fmt(Math.round(totalTok / s.prompts))}</b> tokens of work${s.usd ? ` (about <b>${usd(s.usd / s.prompts)}</b> at API prices)` : ''}.`,
+    s.unpriced && `${fmt(s.unpriced)} tokens from models without a known price are left out of the dollar estimate.`,
+    `Claude averaged <b>${(s.replies / Math.max(1, s.prompts)).toFixed(1)}</b> steps for every prompt you sent.`,
+  ].filter(Boolean);
+  body.innerHTML = `
+    <div class="st-tiles">
+      <div class="st-tile"><b>${fmt(s.prompts)}</b><span>prompts you sent</span><small>in ${s.sessions} sessions</small></div>
+      <div class="st-tile"><b>${fmt(s.replies)}</b><span>steps Claude took</span><small>${fmt(tools)} tool calls</small></div>
+      <div class="st-tile"><b>${fmt(totalTok)}</b><span>tokens spent</span><small>${cachePct >= 1 ? Math.round(cachePct) + '% re-read from cache' : fmt(s.out) + ' written by Claude'}</small></div>
+      ${s.usd ? `<div class="st-tile" data-tip="Estimate: what these tokens would cost at public API prices. Plans like Pro/Max aren't billed per token."><b>${usd(s.usd)}</b><span>at API prices</span><small>${usd(s.usd30)} in the last 30 days</small></div>` : ''}
+      <div class="st-tile"><b>${fmt(Math.round(words))}</b><span>words Claude wrote</span><small>≈ ${novels >= 1 ? Math.round(novels).toLocaleString() + ' novels' : Math.round(novels * 100) + '% of a novel'}</small></div>
+      <div class="st-tile"><b>${s.streak.current}<span style="display:inline;font-size:13px"> day${s.streak.current === 1 ? '' : 's'}</span></b><span>current streak</span><small>best ${s.streak.best} days</small></div>
+      <div class="st-tile"><b>${s.activeDays}</b><span>days with Claude</span><small>since ${since || 'the start'}</small></div>
+      <div class="st-tile"><b style="font-size:16px;line-height:1.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${persona}</b><span>you peak at ${hourLabel(peak)}</span><small>busiest hour of the day</small></div>
+    </div>
+    <div class="st-sec"><h4>Last 30 days</h4><div class="cap">Prompts per day</div>
+      ${barChart(s.last30.map((d) => d.prompts), (i, v) => `${new Date(s.last30[i].day + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}: ${v} prompt${v === 1 ? '' : 's'}`,
+        [new Date(s.last30[0].day + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), 'today'])}</div>
+    <div class="st-sec"><h4>Tokens, last 30 days</h4><div class="cap">Everything Claude read and wrote per day</div>
+      ${barChart(s.last30.map((d) => d.tokens), (i, v) => `${new Date(s.last30[i].day + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}: ${v.toLocaleString()} tokens`,
+        [new Date(s.last30[0].day + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), 'today'])}</div>
+    <div class="st-cols st-sec">
+      <div><h4>Where the tokens went</h4><div class="cap">Re-reading from cache is much cheaper than fresh input</div>${rankList(tokSplit.filter((e) => e[1]), (k) => k, 'tokens')}</div>
+      <div><h4>Tokens by model</h4><div class="cap">All tokens each model handled</div>${rankList(top(s.modelTok || {}, 4), (k) => k.replace(/^claude-/, ''), 'tokens')}</div>
+    </div>
+    ${s.usd ? `<div class="st-sec"><h4>API price equivalent, last 30 days</h4><div class="cap">What each day would have cost at public per-token API prices. An estimate, not your bill: Pro/Max plans aren't charged per token.</div>
+      ${barChart(s.last30.map((d) => d.usd), (i, v) => `${new Date(s.last30[i].day + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}: ${usd(v)}`,
+        [new Date(s.last30[0].day + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), 'today'])}</div>
+    <div class="st-cols st-sec">
+      <div><h4>Price by model</h4><div class="cap">All time, at API prices</div>${rankList(top(s.modelUsd || {}, 4), (k) => k.replace(/^claude-/, ''), '$', usd)}</div>
+      <div><h4>Priciest projects</h4><div class="cap">All time, at API prices</div>${rankList(top(s.projectUsd || {}, 5), base, '$', usd)}</div>
+    </div>` : ''}
+    <div class="st-sec"><h4>Time of day</h4><div class="cap">Prompts by hour, all time</div>
+      ${barChart(s.hours, (h, v) => `${hourLabel(h)}–${hourLabel((h + 1) % 24)}: ${v.toLocaleString()} prompt${v === 1 ? '' : 's'}`, ['00:00', '06:00', '12:00', '18:00', '23:00'])}</div>
+    <div class="st-cols st-sec">
+      <div><h4>Top projects</h4><div class="cap">By prompts</div>${rankList(top(s.projects, 5), base, 'prompts')}</div>
+      <div><h4>Hungriest projects</h4><div class="cap">By tokens</div>${rankList(top(s.projectTok || {}, 5), base, 'tokens')}</div>
+      <div><h4>Favourite tools</h4><div class="cap">What Claude used most</div>${rankList(top(s.tools, 6), toolName, 'calls')}</div>
+    </div>
+    <div class="st-sec"><h4>Models</h4><div class="cap">Share of Claude's steps</div>
+      ${rankList(models.map(([k, v]) => [k, v]), (k) => `${k.replace(/^claude-/, '')} · ${Math.round((s.models[k] / modelTotal) * 100)}%`, 'steps')}</div>
+    <ul class="st-facts">${facts.map((f) => `<li>${f}</li>`).join('')}</ul>
+    <div class="st-foot">Updated in ${(r.ms / 1000).toFixed(1)}s · only counts are kept, never the text of your sessions${s.usd ? ' · dollar figures use Anthropic\'s public API prices (checked Oct 2026)' : ''}</div>`;
+}
+async function toggleStats(show = $('#stats').classList.contains('hidden')) {
+  const m = $('#stats');
+  if (!show) { m.classList.add('hidden'); $('#stTip').classList.add('hidden'); tab() && panes.get(tab().focus)?.term?.focus(); return; }
+  m.classList.remove('hidden'); m.tabIndex = -1; m.focus();
+  if (!$('#stBody .st-tiles')) $('#stBody').innerHTML = '<div class="st-loading">Counting… (the first time reads all your sessions, after that only what\'s new)</div>';
+  renderStats(await D.stats());
+}
+$('#statsBtn').addEventListener('click', () => toggleStats());
+$('#stClose').addEventListener('click', () => toggleStats(false));
+$('#stats').addEventListener('mousedown', (e) => { if (e.target.id === 'stats') toggleStats(false); });
+$('#stats').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); toggleStats(false); } });
+// hover readout for bars and rows
+$('#stats').addEventListener('mousemove', (e) => {
+  const el = e.target.closest('[data-tip]'), tip = $('#stTip');
+  if (!el) { tip.classList.add('hidden'); return; }
+  tip.textContent = el.dataset.tip; tip.classList.remove('hidden');
+  const w = tip.offsetWidth;
+  tip.style.left = Math.min(innerWidth - w - 8, e.clientX + 12) + 'px'; tip.style.top = e.clientY - 34 + 'px';
+});
+$('#stats').addEventListener('mouseleave', () => $('#stTip').classList.add('hidden'));
 
 // ---------- settings ----------
 function renderSettingsStatus(msg) {

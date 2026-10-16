@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('deck', {
   onSettings: (fn) => ipcRenderer.on('settings', (_e, s) => fn(s)),
   onQuitting: (fn) => ipcRenderer.on('quitting', () => fn()),
   takeRestore: () => ipcRenderer.invoke('takeRestore'),
+  stats: () => ipcRenderer.invoke('stats'),
   filePath: (f) => webUtils.getPathForFile(f),
   home: require('os').homedir(),
   platform: process.platform,

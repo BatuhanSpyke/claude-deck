@@ -39,6 +39,8 @@ On macOS this needs the app in a folder you can write to, such as **Applications
 - **Groups.** Save a tab's layout as a group. Opening it later resumes every session in its own folder.
 - **Session names.** Give sessions your own names. Claude's title stays visible as a description.
 - **Command palette** to jump to any session.
+- **Your stats.** Prompts, tokens, streaks, busiest hours, top projects and tools, and what your usage would cost at API prices. Counted on your computer from `~/.claude`; nothing is sent anywhere and only counts are kept, never your text.
+- **Remembers your setup.** Tabs, groups, window size and screen come back after a restart. Drag tabs to reorder them and panes to rearrange them (onto the tab bar for a new tab); Esc cancels a drag.
 
 ## Keyboard shortcuts
 
